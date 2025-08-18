@@ -46,17 +46,22 @@ export default function Page() {
   function removeFromCart(index) {
     setCart(cart.filter((_, i) => i !== index));
   }
+ 
+  async function placeOrder() {
+  const res = await fetch("/api/create-order", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ customer, cart }),
+  });
 
-  function placeOrder() {
-    alert(
-      `✅ Order placed!\n\n` +
-      `Customer: ${customer.name}\n` +
-      `Email: ${customer.email}\n` +
-      `Company: ${customer.company}\n` +
-      `Address: ${customer.address}\n\n` +
-      `Items:\n${cart.map(p => `- ${p.name} (${p.size}) £${p.price}`).join("\n")}`
-    );
+  const data = await res.json();
+  if (data.success) {
+    alert("✅ Order sent to Shopify!");
+    setCart([]);
+  } else {
+    alert("❌ Error: " + data.error);
   }
+}
 
   return (
     <div style={{ fontFamily: "sans-serif", background: "#fdfbf5", minHeight: "100vh", margin: 0 }}>
