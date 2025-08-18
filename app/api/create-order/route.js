@@ -1,3 +1,5 @@
+console.log("DEBUG Shopify Domain:", process.env.SHOPIFY_STORE_DOMAIN);
+
 export async function POST(req) {
   const body = await req.json();
   const { customer, cart } = body;
