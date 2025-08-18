@@ -14,12 +14,16 @@ export async function POST(req) {
           "X-Shopify-Access-Token": process.env.SHOPIFY_ADMIN_ACCESS_TOKEN,
         },
         body: JSON.stringify({
-          draft_order: {
-            line_items: body.cart.map((item) => ({
-              title: item.name,
-              price: item.price,
-              quantity: item.quantity,
-            })),
+       draft_order: {
+  line_items: cart.map(item => ({
+    title: item.title,
+    price: item.price,
+    quantity: item.quantity || 1, // ensure at least 1
+  })),
+  note: `Order from ${company} (${name}, ${email})`,
+  shipping_address: { address1: address },
+},
+
             shipping_address: {
               address1: body.address,
               company: body.company,
