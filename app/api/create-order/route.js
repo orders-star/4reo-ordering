@@ -1,61 +1,76 @@
 // app/api/create-order/route.js
+import { NextResponse } from "next/server";
 
 export async function POST(req) {
+  const body = await req.json();
+
+  const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
+  const SHOPIFY_TOKEN = process.env.SHOPIFY_ADMIN_API_TOKEN;
+
+  if (!SHOPIFY_DOMAIN || !SHOPIFY_TOKEN) {
+    console.error("Missing Shopify environment variables");
+    return NextResponse.json(
+      { error: "Missing Shopify environment variables" },
+      { status: 500 }
+    );
+  }
+
+  // Map variant IDs to prices
+  const priceMap = {
+    "56109627736438": "20.00",   // Milky Way 1kg
+    "56109627769206": "140.00",  // Milky Way 8kg
+    "56109631504758": "18.00",   // Wakey Wakey 1kg
+    "56109631537526": "120.00",  // Wakey Wakey 8kg
+    "56109634191734": "17.00",   // Easy Peasy 1kg
+    "56109634224502": "115.00",  // Easy Peasy 8kg
+  };
+
   try {
-    const body = await req.json();
-    const { name, email, company, address, postcode, cart } = body;
-
-    const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;        // e.g. deluxe-coffeeworks-london.myshopify.com
-    const SHOPIFY_TOKEN  = process.env.SHOPIFY_ADMIN_API_TOKEN;     // Admin API access token
-
-    // Basic safety checks
-    if (!SHOPIFY_DOMAIN || !SHOPIFY_TOKEN) {
-      console.error("Missing Shopify env vars:", {
-        SHOPIFY_STORE_DOMAIN_present: !!SHOPIFY_DOMAIN,
-        SHOPIFY_ADMIN_API_TOKEN_present: !!SHOPIFY_TOKEN,
-      });
-      return new Response(
-        JSON.stringify({ success: false, error: "Server misconfigured: missing Shopify env variables." }),
-        { status: 500 }
-      );
-    }
-    if (!cart || cart.length === 0) {
-      return new Response(JSON.stringify({ success: false, error: "Cart is empty." }), { status: 400 });
-    }
-
-    // Map product + size -> Shopify variant_id (your IDs)
-    const VARIANT_MAP = {
-      "Milky Way Blend": {
-        "1kg Bag":   "56109627736438",
-        "8kg Bucket":"56109627769206",
-      },
-      "Wakey Wakey Blend": {
-        "1kg Bag":   "56109631504758",
-        "8kg Bucket":"56109631537526",
-      },
-      "Easy Peasy Blend": {
-        "1kg Bag":   "56109634191734",
-        "8kg Bucket":"56109634224502",
-      },
-    };
-
-    const line_items = cart.map((item) => {
-      const variantId = VARIANT_MAP[item.name]?.[item.size];
-      if (!variantId) {
-        throw new Error(`No variant_id mapping for "${item.name}" — "${item.size}"`);
-      }
-      return {
-        variant_id: Number(variantId),
-        quantity: item.quantity && item.quantity > 0 ? item.quantity : 1,
-      };
-    });
+    // Build line items with price included
+    const line_items = body.items.map(item => ({
+      variant_id: item.variant_id,
+      quantity: item.quantity,
+      price: priceMap[item.variant_id.toString()] || "0.00"
+    }));
 
     const orderPayload = {
       order: {
+        email: body.email,
+        send_receipt: true,
+        send_fulfillment_receipt: false,
         line_items,
-        customer: {
-          first_name: name || "Guest",
-          email: email || undefined,
-        },
         shipping_address: {
-          first_name: name || "Guest",
+          name: body.name,
+          company: body.company,
+          address1: body.address,
+          zip: body.postcode,
+          country: "GB",
+        },
+      },
+    };
+
+    const response = await fetch(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2024-07/orders.json`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+        },
+        body: JSON.stringify(orderPayload),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("Shopify API Error:", data);
+      return NextResponse.json({ error: data }, { status: response.status });
+    }
+
+    return NextResponse.json({ success: true, order: data });
+  } catch (err) {
+    console.error("Shopify API Error:", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
