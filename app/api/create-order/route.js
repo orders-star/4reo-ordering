@@ -15,6 +15,14 @@ export async function POST(req) {
     );
   }
 
+  if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
+    console.error("No items provided in order body:", body);
+    return NextResponse.json(
+      { error: "No items provided in order body" },
+      { status: 400 }
+    );
+  }
+
   // Map variant IDs to prices
   const priceMap = {
     "56109627736438": "20.00",   // Milky Way 1kg
@@ -26,7 +34,6 @@ export async function POST(req) {
   };
 
   try {
-    // Build line items with price included
     const line_items = body.items.map(item => ({
       variant_id: item.variant_id,
       quantity: item.quantity,
