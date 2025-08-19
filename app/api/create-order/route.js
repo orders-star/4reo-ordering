@@ -1,7 +1,7 @@
 // app/api/create-order/route.js
 import { NextResponse } from "next/server";
 
-// --- Your variant + price mapping ---
+// Map blend + size → Shopify variant_id
 const VARIANT_MAP = {
   "Milky Way Blend": {
     "1kg Bag": "56109627736438",
@@ -17,6 +17,7 @@ const VARIANT_MAP = {
   },
 };
 
+// Explicit prices so Shopify doesn’t complain about missing price
 const PRICE_MAP = {
   "56109627736438": "20.00",   // Milky Way 1kg
   "56109627769206": "140.00",  // Milky Way 8kg
@@ -26,7 +27,7 @@ const PRICE_MAP = {
   "56109634224502": "115.00",  // Easy Peasy 8kg
 };
 
-// Simple diagnostic endpoint so you can visit /api/create-order in a browser
+// Optional: quick diagnostics at /api/create-order (GET)
 export async function GET() {
   return NextResponse.json({
     ok: true,
@@ -35,7 +36,6 @@ export async function GET() {
       SHOPIFY_STORE_DOMAIN: !!process.env.SHOPIFY_STORE_DOMAIN,
       SHOPIFY_ADMIN_API_TOKEN: !!process.env.SHOPIFY_ADMIN_API_TOKEN,
     },
-    domain: process.env.SHOPIFY_STORE_DOMAIN || null,
     message: "POST to this endpoint to create a Shopify order.",
   });
 }
@@ -48,7 +48,6 @@ export async function POST(req) {
     const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;     // e.g. deluxecoffeeworkslondon.myshopify.com
     const SHOPIFY_TOKEN  = process.env.SHOPIFY_ADMIN_API_TOKEN;  // Admin API access token
 
-    // Env guard (shows which one is missing)
     if (!SHOPIFY_DOMAIN || !SHOPIFY_TOKEN) {
       console.error("Missing Shopify env vars:", {
         SHOPIFY_STORE_DOMAIN_present: !!SHOPIFY_DOMAIN,
@@ -60,7 +59,6 @@ export async function POST(req) {
       );
     }
 
-    // Cart guard
     if (!Array.isArray(cart) || cart.length === 0) {
       return NextResponse.json(
         { success: false, error: "No items provided in order body." },
@@ -68,7 +66,7 @@ export async function POST(req) {
       );
     }
 
-    // Build Shopify line_items with variant_id + price
+    // Build line items: variant_id + quantity + price
     const line_items = cart.map((item) => {
       const variantId = VARIANT_MAP[item.name]?.[item.size];
       if (!variantId) {
@@ -78,7 +76,7 @@ export async function POST(req) {
       return {
         variant_id: Number(variantId),
         quantity: Math.max(1, Number(item.quantity || 1)),
-        price, // explicit price to avoid "price must be provided" errors
+        price, // explicit price required by Shopify in some contexts
       };
     });
 
@@ -89,19 +87,19 @@ export async function POST(req) {
         send_receipt: true,
         send_fulfillment_receipt: false,
         tags: "4reo",
-        financial_status: "paid",      // goes straight into Orders as PAID
+        financial_status: "paid",   // goes straight into Orders as PAID
         currency: "GBP",
         note: company ? `Company: ${company}` : undefined,
 
-        // Show company in customer name (no surname)
+        // ✅ Make the customer display as the company name only:
+        // Shopify requires last_name non-empty. We set last_name to company, and omit first_name.
         customer: {
-          first_name: company || "Customer",
-          last_name: "",
+          last_name: company || "Customer",
           email: email || undefined,
           tags: ["4reo"],
         },
 
-        // Shipping name shows company only
+        // Shipping/billing: show company in labels; first_name set to company, last_name blank should be OK
         shipping_address: {
           first_name: company || "Customer",
           last_name: "",
@@ -110,8 +108,6 @@ export async function POST(req) {
           zip: postcode || "",
           country: "GB",
         },
-
-        // Optional: billing same as shipping
         billing_address: {
           first_name: company || "Customer",
           last_name: "",
@@ -123,7 +119,7 @@ export async function POST(req) {
       },
     };
 
-    // Call Shopify Orders API
+    // Create order
     const resp = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/2024-07/orders.json`, {
       method: "POST",
       headers: {
