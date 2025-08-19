@@ -1,7 +1,7 @@
 // app/api/create-order/route.js
 import { NextResponse } from "next/server";
 
-// Map blend + size → Shopify variant_id
+// Map: product + size -> Shopify variant_id
 const VARIANT_MAP = {
   "Milky Way Blend": {
     "1kg Bag": "56109627736438",
@@ -17,7 +17,7 @@ const VARIANT_MAP = {
   },
 };
 
-// Explicit prices so Shopify doesn’t complain about missing price
+// Map: variant_id -> price (as string)
 const PRICE_MAP = {
   "56109627736438": "20.00",   // Milky Way 1kg
   "56109627769206": "140.00",  // Milky Way 8kg
@@ -27,7 +27,7 @@ const PRICE_MAP = {
   "56109634224502": "115.00",  // Easy Peasy 8kg
 };
 
-// Optional: quick diagnostics at /api/create-order (GET)
+// Optional diagnostic: open /api/create-order (GET) in a browser
 export async function GET() {
   return NextResponse.json({
     ok: true,
@@ -43,9 +43,9 @@ export async function GET() {
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { name, email, company, address, postcode, cart } = body;
+    const { email, company, address, postcode, cart } = body;
 
-    const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;     // e.g. deluxecoffeeworkslondon.myshopify.com
+    const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;     // e.g. yourstore.myshopify.com
     const SHOPIFY_TOKEN  = process.env.SHOPIFY_ADMIN_API_TOKEN;  // Admin API access token
 
     if (!SHOPIFY_DOMAIN || !SHOPIFY_TOKEN) {
@@ -66,7 +66,7 @@ export async function POST(req) {
       );
     }
 
-    // Build line items: variant_id + quantity + price
+    // Build line_items with variant_id + explicit price
     const line_items = cart.map((item) => {
       const variantId = VARIANT_MAP[item.name]?.[item.size];
       if (!variantId) {
@@ -76,7 +76,7 @@ export async function POST(req) {
       return {
         variant_id: Number(variantId),
         quantity: Math.max(1, Number(item.quantity || 1)),
-        price, // explicit price required by Shopify in some contexts
+        price, // include price so Shopify doesn't complain
       };
     });
 
@@ -86,24 +86,22 @@ export async function POST(req) {
         email: email || undefined,
         send_receipt: true,
         send_fulfillment_receipt: false,
-        tags: "4reo",
         financial_status: "paid",   // goes straight into Orders as PAID
         currency: "GBP",
+        tags: "4reo",
         note: company ? `Company: ${company}` : undefined,
 
-        // ✅ Make the customer display as the company name only:
-        // Shopify requires last_name non-empty. We set last_name to company, and omit first_name.
+        // ✅ Customer record: ONLY last_name = company (first_name omitted)
         customer: {
           last_name: company || "Customer",
           email: email || undefined,
           tags: ["4reo"],
         },
 
-        // Shipping/billing: show company in labels; first_name set to company, last_name blank should be OK
+        // ✅ Shipping/Billing: ONLY first_name = company (omit 'company' field to avoid duplication)
         shipping_address: {
           first_name: company || "Customer",
-          last_name: "",
-          company: company || undefined,
+          last_name: "",                 // allowed to be empty here
           address1: address || "",
           zip: postcode || "",
           country: "GB",
@@ -111,7 +109,6 @@ export async function POST(req) {
         billing_address: {
           first_name: company || "Customer",
           last_name: "",
-          company: company || undefined,
           address1: address || "",
           zip: postcode || "",
           country: "GB",
@@ -119,7 +116,6 @@ export async function POST(req) {
       },
     };
 
-    // Create order
     const resp = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/2024-07/orders.json`, {
       method: "POST",
       headers: {
