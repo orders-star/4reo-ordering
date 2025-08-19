@@ -52,22 +52,22 @@ export async function POST(req) {
     const orderPayload = {
       order: {
         email: body.email,
-        tags: "4reo", // 👈 tag order
+        tags: "4reo", // tag order
         send_receipt: true,
         send_fulfillment_receipt: false,
-        note: `Company: ${body.company}`, // 👈 show company name as a note
+        note: `Company: ${body.company}`, // store company in notes
         line_items,
         shipping_address: {
-          name: body.company || body.name, // 👈 use company name as "customer name"
+          name: body.company || body.name, // company name used as "customer name"
           company: body.company,
           address1: body.address,
           zip: body.postcode,
           country: "GB",
         },
         customer: {
-          first_name: body.company || body.name, // 👈 customer record shows company
+          first_name: body.company || body.name, // customer record = company name
           email: body.email,
-          tags: ["4reo"], // 👈 tag customer
+          tags: ["4reo"], // tag customer
         },
       },
     };
@@ -83,3 +83,17 @@ export async function POST(req) {
         body: JSON.stringify(orderPayload),
       }
     );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error("Shopify API Error:", data);
+      return NextResponse.json({ error: data }, { status: response.status });
+    }
+
+    return NextResponse.json({ success: true, order: data });
+  } catch (err) {
+    console.error("Shopify API Error:", err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
