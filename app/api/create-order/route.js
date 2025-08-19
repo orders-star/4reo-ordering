@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_URL;
-const SHOPIFY_ADMIN_API_KEY = process.env.SHOPIFY_ADMIN_API_KEY;
+const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
+const SHOPIFY_ADMIN_API_TOKEN = process.env.SHOPIFY_ADMIN_API_TOKEN;
 
 const VARIANT_MAP = {
   "Milky Way Blend": {
