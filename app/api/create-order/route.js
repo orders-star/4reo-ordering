@@ -1,71 +1,71 @@
+import { NextResponse } from "next/server";
+
+const SHOPIFY_STORE_URL = process.env.SHOPIFY_STORE_URL;
+const SHOPIFY_ADMIN_API_KEY = process.env.SHOPIFY_ADMIN_API_KEY;
+
+const VARIANT_MAP = {
+  "Milky Way Blend": {
+    "1kg Bag": "56109627736438",
+    "8kg Bucket": "56109627769206"
+  },
+  "Wakey Wakey Blend": {
+    "1kg Bag": "56109631504758",
+    "8kg Bucket": "56109631537526"
+  },
+  "Easy Peasy Blend": {
+    "1kg Bag": "56109634191734",
+    "8kg Bucket": "56109634224502"
+  }
+};
+
 export async function POST(req) {
   try {
     const body = await req.json();
+    const { name, email, company, address, postcode, cart } = body;
 
-    const { cart, name, email, company, address } = body;
-
-    if (!process.env.SHOPIFY_STORE_DOMAIN || !process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN) {
-      return new Response(
-        JSON.stringify({ error: "Missing Shopify environment variables" }),
-        { status: 500 }
-      );
+    if (!cart || cart.length === 0) {
+      return NextResponse.json({ success: false, error: "Cart is empty" });
     }
 
-    // 🔑 Map product + size → Shopify Variant IDs
-    const VARIANT_MAP = {
-      "Milky Way Blend": {
-        "1kg Bag": "56109627736438",
-        "8kg Bucket": "56109627769206",
-      },
-      "Wakey Wakey Blend": {
-        "1kg Bag": "56109631504758",
-        "8kg Bucket": "56109631537526",
-      },
-      "Easy Peasy Blend": {
-        "1kg Bag": "56109634191734",
-        "8kg Bucket": "56109634224502",
-      },
-    };
-
-    // 🔄 Convert cart items into Shopify line_items
+    // Build Shopify line items
     const line_items = cart.map((item) => {
-      const variantId = VARIANT_MAP[item.name]?.[item.size];
-      if (!variantId) {
-        throw new Error(`Variant ID not found for ${item.name} - ${item.size}`);
-      }
-
+      const variantId = VARIANT_MAP[item.name][item.size];
       return {
         variant_id: variantId,
-        quantity: item.quantity || 1,
+        quantity: item.quantity
       };
     });
 
-    // 🛒 Draft order payload
-    const draftOrder = {
-      draft_order: {
+    // Build order payload
+    const orderPayload = {
+      order: {
         line_items,
         customer: {
-          first_name: name,
-          email: email,
+          first_name: name || "Guest",
+          email: email || "noemail@example.com"
         },
         shipping_address: {
+          first_name: name,
           address1: address,
           company: company,
-          first_name: name,
+          zip: postcode,
+          country: "UK"
         },
-      },
+        tags: "4REO Ordering",
+        financial_status: "paid" // ✅ Automatically marked as paid
+      }
     };
 
-    // 📡 Send to Shopify Admin API
+    // Send to Shopify Orders API
     const response = await fetch(
-      `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/api/2024-07/draft_orders.json`,
+      `https://${SHOPIFY_STORE_URL}/admin/api/2025-01/orders.json`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Shopify-Access-Token": process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN,
+          "X-Shopify-Access-Token": SHOPIFY_ADMIN_API_KEY
         },
-        body: JSON.stringify(draftOrder),
+        body: JSON.stringify(orderPayload)
       }
     );
 
@@ -73,12 +73,12 @@ export async function POST(req) {
 
     if (!response.ok) {
       console.error("Shopify API Error:", data);
-      return new Response(JSON.stringify({ error: data }), { status: 500 });
+      return NextResponse.json({ success: false, error: data });
     }
 
-    return new Response(JSON.stringify({ success: true, data }), { status: 200 });
+    return NextResponse.json({ success: true, order: data.order });
   } catch (err) {
-    console.error("ERROR in create-order:", err);
-    return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+    console.error("Shopify API Error:", err);
+    return NextResponse.json({ success: false, error: err.message });
   }
 }
