@@ -5,7 +5,10 @@ export async function POST(req) {
   try {
     const body = await req.json();
 
-    if (!process.env.SHOPIFY_STORE_URL || !process.env.SHOPIFY_ADMIN_API_TOKEN) {
+    const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
+    const SHOPIFY_TOKEN = process.env.SHOPIFY_ADMIN_API_TOKEN;
+
+    if (!SHOPIFY_DOMAIN || !SHOPIFY_TOKEN) {
       console.error("Missing Shopify environment variables");
       return NextResponse.json(
         { error: "Missing Shopify environment variables" },
@@ -21,69 +24,6 @@ export async function POST(req) {
       );
     }
 
-    // Convert cart items into Shopify line_items
     const line_items = body.cart.map((item) => ({
       title: `${item.name} — ${item.size}`,
-      quantity: item.quantity,
-      price: item.price.toString(), // Shopify requires string
-    }));
-
-    const orderPayload = {
-      order: {
-        line_items,
-        customer: {
-          first_name: body.company, // Company shows as "Customer Name"
-          last_name: "",             // Blank so no surname
-          email: body.email,
-          tags: ["4reo"],            // Add the "4reo" tag
-        },
-        shipping_address: {
-          name: body.company,        // Only company name
-          company: body.company,
-          address1: body.address,
-          zip: body.postcode,
-          country: "GB",
-        },
-        billing_address: {
-          name: body.company,
-          company: body.company,
-          address1: body.address,
-          zip: body.postcode,
-          country: "GB",
-        },
-        financial_status: "pending", // Could also be "paid" if you want auto-paid
-        tags: ["4reo"],              // Order tagged too
-      },
-    };
-
-    const response = await fetch(
-      `https://${process.env.SHOPIFY_STORE_URL}/admin/api/2025-01/orders.json`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Shopify-Access-Token": process.env.SHOPIFY_ADMIN_API_TOKEN,
-        },
-        body: JSON.stringify(orderPayload),
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error("Shopify API Error:", data);
-      return NextResponse.json(
-        { error: "Shopify API Error", details: data },
-        { status: response.status }
-      );
-    }
-
-    return NextResponse.json({ success: true, order: data.order });
-  } catch (error) {
-    console.error("Unexpected error:", error);
-    return NextResponse.json(
-      { error: "Unexpected error", details: error.message },
-      { status: 500 }
-    );
-  }
-}
+      quantity:
