@@ -3,75 +3,59 @@
 export async function POST(req) {
   try {
     const body = await req.json();
+    const { name, email, company, address, postcode, cart } = body;
 
-    const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN; // e.g. deluxe-coffeeworks-london.myshopify.com
-    const SHOPIFY_TOKEN = process.env.SHOPIFY_ADMIN_API_TOKEN;
+    const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;        // e.g. deluxe-coffeeworks-london.myshopify.com
+    const SHOPIFY_TOKEN  = process.env.SHOPIFY_ADMIN_API_TOKEN;     // Admin API access token
 
+    // Basic safety checks
     if (!SHOPIFY_DOMAIN || !SHOPIFY_TOKEN) {
-      console.error("Missing Shopify environment variables");
+      console.error("Missing Shopify env vars:", {
+        SHOPIFY_STORE_DOMAIN_present: !!SHOPIFY_DOMAIN,
+        SHOPIFY_ADMIN_API_TOKEN_present: !!SHOPIFY_TOKEN,
+      });
       return new Response(
-        JSON.stringify({ error: "Missing Shopify environment variables" }),
+        JSON.stringify({ success: false, error: "Server misconfigured: missing Shopify env variables." }),
         { status: 500 }
       );
     }
+    if (!cart || cart.length === 0) {
+      return new Response(JSON.stringify({ success: false, error: "Cart is empty." }), { status: 400 });
+    }
 
-    // Build Shopify order payload
-    const orderPayload = {
-      order: {
-        line_items: body.cart.map((item) => ({
-          variant_id: item.id,   // Shopify variant ID
-          quantity: item.quantity,
-        })),
-        customer: {
-          first_name: body.name,
-          email: body.email,
-          company: body.company,
-        },
-        shipping_address: {
-          address1: body.address,
-          city: body.city || "",
-          zip: body.postcode || "",
-          country: "United Kingdom",
-        },
-        financial_status: "pending", // You can change to "paid" if charging
-        tags: "Wholesale-Ordering-App",
+    // Map product + size -> Shopify variant_id (your IDs)
+    const VARIANT_MAP = {
+      "Milky Way Blend": {
+        "1kg Bag":   "56109627736438",
+        "8kg Bucket":"56109627769206",
+      },
+      "Wakey Wakey Blend": {
+        "1kg Bag":   "56109631504758",
+        "8kg Bucket":"56109631537526",
+      },
+      "Easy Peasy Blend": {
+        "1kg Bag":   "56109634191734",
+        "8kg Bucket":"56109634224502",
       },
     };
 
-    // Send to Shopify Orders API
-    const response = await fetch(
-      `https://${SHOPIFY_DOMAIN}/admin/api/2023-07/orders.json`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Shopify-Access-Token": SHOPIFY_TOKEN,
-        },
-        body: JSON.stringify(orderPayload),
+    const line_items = cart.map((item) => {
+      const variantId = VARIANT_MAP[item.name]?.[item.size];
+      if (!variantId) {
+        throw new Error(`No variant_id mapping for "${item.name}" — "${item.size}"`);
       }
-    );
+      return {
+        variant_id: Number(variantId),
+        quantity: item.quantity && item.quantity > 0 ? item.quantity : 1,
+      };
+    });
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error("Shopify API Error:", data);
-      return new Response(
-        JSON.stringify({ error: data }),
-        { status: response.status }
-      );
-    }
-
-    return new Response(
-      JSON.stringify({ success: true, order: data.order }),
-      { status: 200 }
-    );
-
-  } catch (error) {
-    console.error("ERROR in create-order:", error);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500 }
-    );
-  }
-}
-
+    const orderPayload = {
+      order: {
+        line_items,
+        customer: {
+          first_name: name || "Guest",
+          email: email || undefined,
+        },
+        shipping_address: {
+          first_name: name || "Guest",
