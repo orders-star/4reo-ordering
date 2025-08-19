@@ -2,83 +2,67 @@
 import { NextResponse } from "next/server";
 
 export async function POST(req) {
-  const body = await req.json();
-
-  const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
-  const SHOPIFY_TOKEN = process.env.SHOPIFY_ADMIN_API_TOKEN;
-
-  if (!SHOPIFY_DOMAIN || !SHOPIFY_TOKEN) {
-    console.error("Missing Shopify environment variables");
-    return NextResponse.json(
-      { error: "Missing Shopify environment variables" },
-      { status: 500 }
-    );
-  }
-
-  if (!body.cart || !Array.isArray(body.cart) || body.cart.length === 0) {
-    console.error("No cart provided in order body:", body);
-    return NextResponse.json(
-      { error: "No cart provided in order body" },
-      { status: 400 }
-    );
-  }
-
-  // Map blend + size → Shopify variant_id and price
-  const variantMap = {
-    "Milky Way Blend_1kg Bag": { id: 56109627736438, price: "20.00" },
-    "Milky Way Blend_8kg Bucket": { id: 56109627769206, price: "140.00" },
-    "Wakey Wakey Blend_1kg Bag": { id: 56109631504758, price: "18.00" },
-    "Wakey Wakey Blend_8kg Bucket": { id: 56109631537526, price: "120.00" },
-    "Easy Peasy Blend_1kg Bag": { id: 56109634191734, price: "17.00" },
-    "Easy Peasy Blend_8kg Bucket": { id: 56109634224502, price: "115.00" },
-  };
-
   try {
-    const line_items = body.cart.map(item => {
-      const key = `${item.name}_${item.size}`;
-      const variant = variantMap[key];
+    const body = await req.json();
 
-      if (!variant) {
-        throw new Error(`Unknown product variant: ${key}`);
-      }
+    if (!process.env.SHOPIFY_STORE_URL || !process.env.SHOPIFY_ADMIN_API_TOKEN) {
+      console.error("Missing Shopify environment variables");
+      return NextResponse.json(
+        { error: "Missing Shopify environment variables" },
+        { status: 500 }
+      );
+    }
 
-      return {
-        variant_id: variant.id,
-        quantity: item.quantity,
-        price: variant.price,
-      };
-    });
+    if (!body.cart || body.cart.length === 0) {
+      console.error("No items provided in order body:", body);
+      return NextResponse.json(
+        { error: "No items provided in order body" },
+        { status: 400 }
+      );
+    }
+
+    // Convert cart items into Shopify line_items
+    const line_items = body.cart.map((item) => ({
+      title: `${item.name} — ${item.size}`,
+      quantity: item.quantity,
+      price: item.price.toString(), // Shopify requires string
+    }));
 
     const orderPayload = {
       order: {
-        email: body.email,
-        tags: "4reo", // tag order
-        send_receipt: true,
-        send_fulfillment_receipt: false,
-        note: `Company: ${body.company}`, // store company in notes
         line_items,
+        customer: {
+          first_name: body.company, // Company shows as "Customer Name"
+          last_name: "",             // Blank so no surname
+          email: body.email,
+          tags: ["4reo"],            // Add the "4reo" tag
+        },
         shipping_address: {
-          name: body.company || body.name, // company name used as "customer name"
+          name: body.company,        // Only company name
           company: body.company,
           address1: body.address,
           zip: body.postcode,
           country: "GB",
         },
-        customer: {
-          first_name: body.company || body.name, // customer record = company name
-          email: body.email,
-          tags: ["4reo"], // tag customer
+        billing_address: {
+          name: body.company,
+          company: body.company,
+          address1: body.address,
+          zip: body.postcode,
+          country: "GB",
         },
+        financial_status: "pending", // Could also be "paid" if you want auto-paid
+        tags: ["4reo"],              // Order tagged too
       },
     };
 
     const response = await fetch(
-      `https://${SHOPIFY_DOMAIN}/admin/api/2024-07/orders.json`,
+      `https://${process.env.SHOPIFY_STORE_URL}/admin/api/2025-01/orders.json`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+          "X-Shopify-Access-Token": process.env.SHOPIFY_ADMIN_API_TOKEN,
         },
         body: JSON.stringify(orderPayload),
       }
@@ -88,12 +72,18 @@ export async function POST(req) {
 
     if (!response.ok) {
       console.error("Shopify API Error:", data);
-      return NextResponse.json({ error: data }, { status: response.status });
+      return NextResponse.json(
+        { error: "Shopify API Error", details: data },
+        { status: response.status }
+      );
     }
 
-    return NextResponse.json({ success: true, order: data });
-  } catch (err) {
-    console.error("Shopify API Error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ success: true, order: data.order });
+  } catch (error) {
+    console.error("Unexpected error:", error);
+    return NextResponse.json(
+      { error: "Unexpected error", details: error.message },
+      { status: 500 }
+    );
   }
 }
