@@ -15,30 +15,39 @@ export async function POST(req) {
     );
   }
 
-  if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
-    console.error("No items provided in order body:", body);
+  if (!body.cart || !Array.isArray(body.cart) || body.cart.length === 0) {
+    console.error("No cart provided in order body:", body);
     return NextResponse.json(
-      { error: "No items provided in order body" },
+      { error: "No cart provided in order body" },
       { status: 400 }
     );
   }
 
-  // Map variant IDs to prices
-  const priceMap = {
-    "56109627736438": "20.00",   // Milky Way 1kg
-    "56109627769206": "140.00",  // Milky Way 8kg
-    "56109631504758": "18.00",   // Wakey Wakey 1kg
-    "56109631537526": "120.00",  // Wakey Wakey 8kg
-    "56109634191734": "17.00",   // Easy Peasy 1kg
-    "56109634224502": "115.00",  // Easy Peasy 8kg
+  // Map blend + size → Shopify variant_id and price
+  const variantMap = {
+    "Milky Way Blend_1kg Bag": { id: 56109627736438, price: "20.00" },
+    "Milky Way Blend_8kg Bucket": { id: 56109627769206, price: "140.00" },
+    "Wakey Wakey Blend_1kg Bag": { id: 56109631504758, price: "18.00" },
+    "Wakey Wakey Blend_8kg Bucket": { id: 56109631537526, price: "120.00" },
+    "Easy Peasy Blend_1kg Bag": { id: 56109634191734, price: "17.00" },
+    "Easy Peasy Blend_8kg Bucket": { id: 56109634224502, price: "115.00" },
   };
 
   try {
-    const line_items = body.items.map(item => ({
-      variant_id: item.variant_id,
-      quantity: item.quantity,
-      price: priceMap[item.variant_id.toString()] || "0.00"
-    }));
+    const line_items = body.cart.map(item => {
+      const key = `${item.name}_${item.size}`;
+      const variant = variantMap[key];
+
+      if (!variant) {
+        throw new Error(`Unknown product variant: ${key}`);
+      }
+
+      return {
+        variant_id: variant.id,
+        quantity: item.quantity,
+        price: variant.price,
+      };
+    });
 
     const orderPayload = {
       order: {
